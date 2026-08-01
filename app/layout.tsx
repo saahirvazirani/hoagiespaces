@@ -12,9 +12,9 @@ export const metadata: Metadata = {
     title: "HoagieSpaces",
     description: "Your next study spot is already waiting.",
     url: publicUrl,
-    images: [{ url: `${publicUrl}/og.png`, width: 1200, height: 630, alt: "HoagieSpaces live study-space matching" }],
+    images: [{ url: `${publicUrl}/og-v2.png`, width: 1200, height: 630, alt: "HoagieSpaces first-year group study finder" }],
   },
-  twitter: { card: "summary_large_image", title: "HoagieSpaces", description: "Your next study spot is already waiting.", images: [`${publicUrl}/og.png`] },
+  twitter: { card: "summary_large_image", title: "HoagieSpaces", description: "Find a place your whole group can use.", images: [`${publicUrl}/og-v2.png`] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
