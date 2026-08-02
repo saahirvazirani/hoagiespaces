@@ -44,6 +44,7 @@ type Report = {
 type DemoAccount = { netid: string; karma: number };
 type StudyLog = { id: string; spaceId: string; user: string; startedAt: number; endedAt: number };
 type ActiveSession = { spaceId: string; startedAt: number };
+type Presence = { netid: string; name: string; spaceId: string };
 
 const sampleLeaders = [
   { name: "Andrew Lobo", hours: 12.8, favorite: "Firestone Library" },
@@ -51,6 +52,19 @@ const sampleLeaders = [
   { name: "Saahir Vazirani", hours: 9.9, favorite: "Frist Campus Center" },
   { name: "Abraham Piedra Gonzalez", hours: 8.7, favorite: "Stokes Library" },
 ];
+
+const samplePresence: Presence[] = [
+  { netid: "andrew", name: "Andrew Lobo", spaceId: "firestone-discovery" },
+  { netid: "arham", name: "Arham Piracha", spaceId: "lewis-commons" },
+  { netid: "saahir", name: "Saahir Vazirani", spaceId: "frist-commons" },
+  { netid: "abraham", name: "Abraham Piedra Gonzalez", spaceId: "stokes-rooms" },
+];
+
+const sampleCrowdCounts: Record<string, number> = {
+  "firestone-discovery": 18, "firestone-group": 7, "firestone-tower": 12, "firestone-thomas": 9,
+  "lewis-commons": 14, engineering: 6, "stokes-rooms": 5, "east-asian": 8,
+  "frist-commons": 21, "campus-club": 10, "fields-center": 6, ppl: 11, "small-world": 9, "library-cafe": 4,
+};
 
 const libraryHours: Hours = [[10, 21], [8, 21], [8, 21], [8, 21], [8, 21], [8, 21], [10, 19]];
 const branchHours: Hours = [null, [9, 17], [9, 17], [9, 17], [9, 17], [9, 17], null];
@@ -200,11 +214,13 @@ export default function Home() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [selected, setSelected] = useState<Space | null>(null);
-  const [modal, setModal] = useState<"detail" | "report" | "karma" | "login" | null>(null);
+  const [modal, setModal] = useState<"detail" | "report" | "karma" | "login" | "friends" | null>(null);
   const [account, setAccount] = useState<DemoAccount | null>(null);
   const [loginError, setLoginError] = useState("");
   const [studyLogs, setStudyLogs] = useState<StudyLog[]>([]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [friends, setFriends] = useState<string[]>([]);
+  const [friendError, setFriendError] = useState("");
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [locationMessage, setLocationMessage] = useState("Walking times from Frist");
 
@@ -215,11 +231,13 @@ export default function Home() {
     const storedAccount = window.localStorage.getItem("hoagiespaces:account");
     const storedStudyLogs = window.localStorage.getItem("hoagiespaces:study-logs");
     const storedActiveSession = window.localStorage.getItem("hoagiespaces:active-session");
+    const storedFriends = window.localStorage.getItem("hoagiespaces:friends");
     if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
     if (storedReports) setReports((JSON.parse(storedReports) as Report[]).filter((report) => report.expiresAt > Date.now()));
     if (storedAccount) setAccount(JSON.parse(storedAccount));
     if (storedStudyLogs) setStudyLogs(JSON.parse(storedStudyLogs));
     if (storedActiveSession) setActiveSession(JSON.parse(storedActiveSession));
+    if (storedFriends) setFriends(JSON.parse(storedFriends));
     return () => window.clearInterval(timer);
   }, []);
 
@@ -234,6 +252,7 @@ export default function Home() {
     if (activeSession) window.localStorage.setItem("hoagiespaces:active-session", JSON.stringify(activeSession));
     else window.localStorage.removeItem("hoagiespaces:active-session");
   }, [activeSession]);
+  useEffect(() => { window.localStorage.setItem("hoagiespaces:friends", JSON.stringify(friends)); }, [friends]);
 
   function distanceMinutes(space: Space) {
     if (!origin) return space.walkFromFrist;
@@ -299,6 +318,20 @@ export default function Home() {
     setActiveSession(null);
   }
 
+  function addFriend(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const netid = String(new FormData(event.currentTarget).get("friendNetid") ?? "").trim().toLowerCase().replace(/@princeton\.edu$/, "");
+    if (!/^[a-z0-9]{2,8}$/.test(netid)) { setFriendError("Enter a valid 2–8 character NetID."); return; }
+    if (friends.includes(netid)) { setFriendError("That person is already on your friends list."); return; }
+    setFriends((current) => [...current, netid]);
+    setFriendError("");
+    event.currentTarget.reset();
+  }
+
+  function friendsAt(spaceId: string) {
+    return samplePresence.filter((person) => person.spaceId === spaceId && friends.includes(person.netid));
+  }
+
   const activeSpace = activeSession ? spaces.find((space) => space.id === activeSession.spaceId) : null;
   const personalStudyMs = studyLogs.reduce((total, log) => total + Math.max(0, log.endedAt - log.startedAt), 0) + (activeSession ? now.getTime() - activeSession.startedAt : 0);
 
@@ -322,7 +355,7 @@ export default function Home() {
     <main>
       <header className="topbar">
         <a className="brand" href="#top"><span className="brand-mark">H</span><span>hoagie<span className="brand-light">spaces</span></span></a>
-        <nav aria-label="Primary"><a className="nav-active" href="#finder">Find a spot</a><a href="#first-year">First-year guide</a><a href="#leaderboard">Leaderboard</a><button className="nav-link" onClick={() => setModal("karma")}>Tiger Karma</button></nav>
+        <nav aria-label="Primary"><a className="nav-active" href="#finder">Find a spot</a><a href="#first-year">First-year guide</a><a href="#leaderboard">Leaderboard</a><button className="nav-link" onClick={() => setModal("friends")}>Friends{friends.length ? ` (${friends.length})` : ""}</button><button className="nav-link" onClick={() => setModal("karma")}>Tiger Karma</button></nav>
         <div className="profile">
           {account ? <button className="account-chip" onClick={() => setModal("karma")}><span>{account.netid.slice(0, 1).toUpperCase()}</span><b>{account.netid}</b><small>{account.karma} karma</small></button> : <button className="netid-button" onClick={() => setModal("login")}>Sign in with NetID</button>}
           <button className="report-nav" onClick={() => openReport()}>＋ Report availability</button>
@@ -372,6 +405,7 @@ export default function Home() {
               </div>
               <div className="result-title"><div><span>{space.kind} · {space.zone}</span><h3>{space.name}</h3><p>{space.building}</p></div><div className="walk"><strong>{distanceMinutes(space)}</strong><small>min walk</small></div></div>
               <div className="fit-row"><div><small>GROUP FIT</small><strong>{space.groupLabel}</strong></div><div><small>NOISE</small><strong>{space.noise}</strong></div></div>
+              <div className="presence-row"><span className="people-icon">●●●</span><div><strong>{sampleCrowdCounts[space.id] ?? 0} people studying here</strong>{friendsAt(space.id).length ? <small>{friendsAt(space.id).map((person) => person.name).join(", ")} {friendsAt(space.id).length === 1 ? "is" : "are"} here</small> : <small>Specific identities stay private · <button onClick={() => setModal("friends")}>check friends</button></small>}</div></div>
               {report ? <div className="live-report"><span className="pulse" /><strong>{report.seats} seats reported</strong><span>{minutesAgo(report.createdAt, now)}m ago{report.note ? ` · “${report.note}”` : ""}</span></div> : <button className="empty-report" onClick={() => openReport(space)}>No fresh report · add one ＋</button>}
               <div className="tag-row large">{space.features.slice(0, 4).map((feature) => <span key={feature}>{feature}</span>)}</div>
               {firstYearMode && <div className="first-year-tip"><b>’30 TIP</b><p>{space.firstYearTip}</p></div>}
@@ -402,7 +436,8 @@ export default function Home() {
       <footer><div className="footer-brand"><span className="brand-mark small">H</span><strong>hoagie<span>spaces</span></strong></div><p>Built by Andrew Lobo, Arham Piracha, Saahir Vazirani & Abraham Piedra Gonzalez · Mentor: Mina Atak</p><div className="source-links"><a href="https://library.princeton.edu/visit-and-spaces/locations" target="_blank" rel="noreferrer">Live library directory ↗</a><a href="https://princetonlibrary.org/hours/" target="_blank" rel="noreferrer">Public Library hours ↗</a></div></footer>
 
       {modal && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeModal()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={closeModal}>×</button>
-        {modal === "login" ? <form onSubmit={signInDemo}><span className="section-kicker">PRINCETON COMMUNITY</span><h2 id="modal-title">Continue with your NetID</h2><p className="modal-intro">This public MVP never asks for your Princeton password. Entering a NetID creates a device-local prototype profile; it is <strong>not University-verified yet</strong>.</p><label>Princeton NetID<div className="netid-input"><input name="netid" autoCapitalize="none" autoComplete="username" placeholder="abc123" autoFocus /><span>@princeton.edu</span></div></label>{loginError && <p className="form-error">{loginError}</p>}<button className="primary wide" type="submit">Continue to prototype →</button><div className="cas-note"><b>Production authentication</b><span>HoagieSpaces is ready to connect to Princeton CAS. CAS sends students through Princeton’s sign-in and Duo flow, then the server validates a one-time ticket. OIT or TigerApps must approve and configure the production service URL.</span><a href="https://www.cs.princeton.edu/~cmoretti/cos333/CAS/" target="_blank" rel="noreferrer">Read Princeton’s CAS guidance ↗</a></div></form>
+        {modal === "friends" ? <div className="friends-modal"><span className="section-kicker">OPT-IN FRIEND PRESENCE</span><h2 id="modal-title">Find friends, not strangers.</h2><p className="modal-intro">Everyone sees only the number of people at a space. A name appears only when that person is on your friends list and has chosen to share their active study location.</p><form onSubmit={addFriend}><label>Add by Princeton NetID<div className="netid-input"><input name="friendNetid" autoCapitalize="none" autoComplete="off" placeholder="andrew" autoFocus /><span>@princeton.edu</span></div></label>{friendError && <p className="form-error">{friendError}</p>}<button className="primary wide" type="submit">Add to friends →</button></form><div className="demo-friends"><b>Try the MVP demo</b><span>Sample handles: andrew, arham, saahir, abraham</span></div><div className="friend-list"><div className="friend-list-heading"><strong>Your friends</strong><span>{friends.length}</span></div>{friends.length ? friends.map((netid) => { const demo = samplePresence.find((person) => person.netid === netid); return <div className="friend-item" key={netid}><span>{(demo?.name ?? netid).slice(0, 1).toUpperCase()}</span><div><strong>{demo?.name ?? netid}</strong><small>{demo ? `${demo.netid}@princeton.edu · sharing in demo` : `${netid}@princeton.edu · request pending`}</small></div><button onClick={() => setFriends((current) => current.filter((friend) => friend !== netid))}>Remove</button></div>; }) : <p className="empty-friends">No friends added yet. Aggregate crowd counts remain visible everywhere.</p>}</div><div className="policy-note"><strong>Privacy rule:</strong> no stranger names, no background location tracking, no location history shared, and presence automatically ends when a focus session stops.</div></div>
+        : modal === "login" ? <form onSubmit={signInDemo}><span className="section-kicker">PRINCETON COMMUNITY</span><h2 id="modal-title">Continue with your NetID</h2><p className="modal-intro">This public MVP never asks for your Princeton password. Entering a NetID creates a device-local prototype profile; it is <strong>not University-verified yet</strong>.</p><label>Princeton NetID<div className="netid-input"><input name="netid" autoCapitalize="none" autoComplete="username" placeholder="abc123" autoFocus /><span>@princeton.edu</span></div></label>{loginError && <p className="form-error">{loginError}</p>}<button className="primary wide" type="submit">Continue to prototype →</button><div className="cas-note"><b>Production authentication</b><span>HoagieSpaces is ready to connect to Princeton CAS. CAS sends students through Princeton’s sign-in and Duo flow, then the server validates a one-time ticket. OIT or TigerApps must approve and configure the production service URL.</span><a href="https://www.cs.princeton.edu/~cmoretti/cos333/CAS/" target="_blank" rel="noreferrer">Read Princeton’s CAS guidance ↗</a></div></form>
         : modal === "karma" ? <div className="detail-modal"><span className="section-kicker">TIGER KARMA</span><h2 id="modal-title">A reputation signal for helpful Tigers.</h2><p className="modal-intro">The score rewards timely, accurate contributions. It has no cash value and should never affect access to campus spaces.</p><div className="detail-grid"><div><small>Report a space</small><strong>+5 karma</strong></div><div><small>Confirm a report</small><strong>+3 karma</strong></div><div><small>Accepted correction</small><strong>+10 karma</strong></div><div><small>Expired / disputed</small><strong>No penalty by default</strong></div></div><div className="policy-note"><strong>Trust design:</strong> reports expire after 20 minutes; repeated false reports can be rate-limited; precise movement history is never shown; only a NetID-verified account could publish to a shared production feed.</div>{account ? <div className="signed-summary"><span>{account.netid}@princeton.edu</span><strong>{account.karma} Tiger Karma</strong><button onClick={() => { setAccount(null); setModal(null); }}>Sign out of prototype</button></div> : <button className="primary" onClick={() => setModal("login")}>Create prototype profile →</button>}</div>
         : modal === "report" && selected ? <form onSubmit={submitReport}><span className="section-kicker">20-MINUTE REPORT</span><h2 id="modal-title">What do you see?</h2><p className="modal-intro">This report stays on this device and expires automatically.{account ? " You’ll earn 5 prototype Tiger Karma." : " Sign in to attach a prototype NetID and earn karma."}</p><label>Space<select name="spaceId" defaultValue={selected.id}>{spaces.map((space) => <option value={space.id} key={space.id}>{space.name} · {space.building}</option>)}</select></label><div className="form-row"><label>Availability<select name="status" defaultValue="some"><option value="plenty">Plenty of space</option><option value="some">Some space</option><option value="full">Looks full</option></select></label><label>Open seats<input name="seats" type="number" min="0" max="100" defaultValue="4" /></label></div><label>Optional note<input name="note" maxLength={80} placeholder="e.g. two tables near the windows" /></label><button className="primary wide" type="submit">Publish expiring report →</button></form>
         : selected && <div className="detail-modal"><span className="section-kicker">{selected.kind} · {selected.zone}</span><h2 id="modal-title">{selected.name}</h2><p className="modal-intro">{selected.building} · approximately {distanceMinutes(selected)} minutes away</p><div className="detail-grid"><div><small>Group fit</small><strong>{selected.groupLabel}</strong></div><div><small>Noise</small><strong>{selected.noise}</strong></div><div><small>Access</small><strong>{selected.access}</strong></div><div><small>Reservation</small><strong>{selected.reservable ? "Available / recommended" : "Walk-in"}</strong></div></div><div className="tag-row large">{selected.features.map((feature) => <span key={feature}>{feature}</span>)}</div><div className="policy-note"><strong>First-year directions:</strong> {selected.firstYearTip}</div><div className="modal-actions"><a className="primary" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${selected.lat},${selected.lng}&travelmode=walking`}>Open walking directions →</a><a className="secondary" href={selected.officialUrl} target="_blank" rel="noreferrer">Verify official details ↗</a></div></div>}
