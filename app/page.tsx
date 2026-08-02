@@ -42,6 +42,15 @@ type Report = {
 };
 
 type DemoAccount = { netid: string; karma: number };
+type StudyLog = { id: string; spaceId: string; user: string; startedAt: number; endedAt: number };
+type ActiveSession = { spaceId: string; startedAt: number };
+
+const sampleLeaders = [
+  { name: "Andrew Lobo", hours: 12.8, favorite: "Firestone Library" },
+  { name: "Arham Piracha", hours: 11.4, favorite: "Lewis Library" },
+  { name: "Saahir Vazirani", hours: 9.9, favorite: "Frist Campus Center" },
+  { name: "Abraham Piedra Gonzalez", hours: 8.7, favorite: "Stokes Library" },
+];
 
 const libraryHours: Hours = [[10, 21], [8, 21], [8, 21], [8, 21], [8, 21], [8, 21], [10, 19]];
 const branchHours: Hours = [null, [9, 17], [9, 17], [9, 17], [9, 17], [9, 17], null];
@@ -172,6 +181,13 @@ function minutesAgo(timestamp: number, now: Date) {
   return Math.max(0, Math.floor((now.getTime() - timestamp) / 60000));
 }
 
+function formatStudyTime(milliseconds: number) {
+  const totalMinutes = Math.max(0, Math.floor(milliseconds / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours}h ${minutes.toString().padStart(2, "0")}m` : `${minutes}m`;
+}
+
 export default function Home() {
   const [now, setNow] = useState(new Date());
   const [query, setQuery] = useState("");
@@ -187,6 +203,8 @@ export default function Home() {
   const [modal, setModal] = useState<"detail" | "report" | "karma" | "login" | null>(null);
   const [account, setAccount] = useState<DemoAccount | null>(null);
   const [loginError, setLoginError] = useState("");
+  const [studyLogs, setStudyLogs] = useState<StudyLog[]>([]);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [locationMessage, setLocationMessage] = useState("Walking times from Frist");
 
@@ -195,9 +213,13 @@ export default function Home() {
     const storedFavorites = window.localStorage.getItem("hoagiespaces:favorites");
     const storedReports = window.localStorage.getItem("hoagiespaces:reports");
     const storedAccount = window.localStorage.getItem("hoagiespaces:account");
+    const storedStudyLogs = window.localStorage.getItem("hoagiespaces:study-logs");
+    const storedActiveSession = window.localStorage.getItem("hoagiespaces:active-session");
     if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
     if (storedReports) setReports((JSON.parse(storedReports) as Report[]).filter((report) => report.expiresAt > Date.now()));
     if (storedAccount) setAccount(JSON.parse(storedAccount));
+    if (storedStudyLogs) setStudyLogs(JSON.parse(storedStudyLogs));
+    if (storedActiveSession) setActiveSession(JSON.parse(storedActiveSession));
     return () => window.clearInterval(timer);
   }, []);
 
@@ -207,6 +229,11 @@ export default function Home() {
     if (account) window.localStorage.setItem("hoagiespaces:account", JSON.stringify(account));
     else window.localStorage.removeItem("hoagiespaces:account");
   }, [account]);
+  useEffect(() => { window.localStorage.setItem("hoagiespaces:study-logs", JSON.stringify(studyLogs)); }, [studyLogs]);
+  useEffect(() => {
+    if (activeSession) window.localStorage.setItem("hoagiespaces:active-session", JSON.stringify(activeSession));
+    else window.localStorage.removeItem("hoagiespaces:active-session");
+  }, [activeSession]);
 
   function distanceMinutes(space: Space) {
     if (!origin) return space.walkFromFrist;
@@ -259,6 +286,22 @@ export default function Home() {
     setModal(null);
   }
 
+  function startStudySession(space: Space) {
+    if (activeSession) return;
+    setActiveSession({ spaceId: space.id, startedAt: Date.now() });
+  }
+
+  function endStudySession() {
+    if (!activeSession) return;
+    const endedAt = Date.now();
+    setStudyLogs((logs) => [...logs, { id: crypto.randomUUID(), spaceId: activeSession.spaceId, user: account?.netid ?? "You", startedAt: activeSession.startedAt, endedAt }]);
+    if (account && endedAt - activeSession.startedAt >= 25 * 60 * 1000) setAccount({ ...account, karma: account.karma + 10 });
+    setActiveSession(null);
+  }
+
+  const activeSpace = activeSession ? spaces.find((space) => space.id === activeSession.spaceId) : null;
+  const personalStudyMs = studyLogs.reduce((total, log) => total + Math.max(0, log.endedAt - log.startedAt), 0) + (activeSession ? now.getTime() - activeSession.startedAt : 0);
+
   function submitReport(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -279,12 +322,14 @@ export default function Home() {
     <main>
       <header className="topbar">
         <a className="brand" href="#top"><span className="brand-mark">H</span><span>hoagie<span className="brand-light">spaces</span></span></a>
-        <nav aria-label="Primary"><a className="nav-active" href="#finder">Find a spot</a><a href="#first-year">First-year guide</a><button className="nav-link" onClick={() => setModal("karma")}>Tiger Karma</button><a href="#sources">Data sources</a></nav>
+        <nav aria-label="Primary"><a className="nav-active" href="#finder">Find a spot</a><a href="#first-year">First-year guide</a><a href="#leaderboard">Leaderboard</a><button className="nav-link" onClick={() => setModal("karma")}>Tiger Karma</button></nav>
         <div className="profile">
           {account ? <button className="account-chip" onClick={() => setModal("karma")}><span>{account.netid.slice(0, 1).toUpperCase()}</span><b>{account.netid}</b><small>{account.karma} karma</small></button> : <button className="netid-button" onClick={() => setModal("login")}>Sign in with NetID</button>}
           <button className="report-nav" onClick={() => openReport()}>＋ Report availability</button>
         </div>
       </header>
+
+      {activeSession && activeSpace && <aside className="focus-dock" aria-live="polite"><span className="focus-pulse" /><div><small>FOCUS SESSION IN PROGRESS</small><strong>{activeSpace.name}</strong></div><time>{formatStudyTime(now.getTime() - activeSession.startedAt)}</time><button onClick={endStudySession}>Finish & log time</button></aside>}
 
       <section className="finder-hero" id="top">
         <div className="hero-copy">
@@ -331,10 +376,16 @@ export default function Home() {
               <div className="tag-row large">{space.features.slice(0, 4).map((feature) => <span key={feature}>{feature}</span>)}</div>
               {firstYearMode && <div className="first-year-tip"><b>’30 TIP</b><p>{space.firstYearTip}</p></div>}
               <div className="source-row"><span>Official details checked {space.verified}</span><a href={space.officialUrl} target="_blank" rel="noreferrer">{space.officialSource} ↗</a></div>
+              <button className={`focus-button ${activeSession?.spaceId === space.id ? "active" : ""}`} onClick={() => activeSession?.spaceId === space.id ? endStudySession() : startStudySession(space)} disabled={Boolean(activeSession && activeSession.spaceId !== space.id)}>{activeSession?.spaceId === space.id ? `■ Finish session · ${formatStudyTime(now.getTime() - activeSession.startedAt)}` : activeSession ? "Focus timer running elsewhere" : "▶ Start focus timer here"}</button>
               <div className="card-actions"><button onClick={() => openDetail(space)}>Details</button><a className="directions" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${space.lat},${space.lng}&travelmode=walking`}>Walking directions →</a></div>
             </article>;
           })}
         </div> : <div className="no-results"><strong>No exact match yet.</strong><p>Try a smaller group, select “All” areas, or turn off “Open now.”</p><button onClick={() => { setZone("All"); setKind("All"); setNoise("All"); setOpenOnly(false); }}>Reset filters</button></div>}
+      </section>
+
+      <section className="leaderboard-section" id="leaderboard">
+        <div className="leaderboard-copy"><span className="section-kicker">WEEKLY FOCUS LEADERBOARD</span><h2>Study together. Build momentum.</h2><p>Start a timer from any space card and HoagieSpaces records how long you studied there. The public MVP stores sessions only on this device; a NetID-backed release would sync opt-in weekly totals.</p><div className="personal-total"><small>YOUR DEVICE TOTAL</small><strong>{formatStudyTime(personalStudyMs)}</strong><span>{studyLogs.length} completed session{studyLogs.length === 1 ? "" : "s"}</span></div></div>
+        <div className="leaderboard-card"><div className="board-heading"><div><b>Focus this week</b><span>Sample board for MVP demonstration</span></div><span>Hours</span></div><ol>{sampleLeaders.map((leader, index) => <li key={leader.name}><span className={`rank rank-${index + 1}`}>{index + 1}</span><div><strong>{leader.name}</strong><small>Most studied: {leader.favorite}</small></div><b>{leader.hours.toFixed(1)}</b></li>)}</ol><p>Privacy default: display name and totals are opt-in; precise session times and movement history stay private.</p></div>
       </section>
 
       <section className="data-section" id="sources">
@@ -348,7 +399,7 @@ export default function Home() {
         <button className="secondary" onClick={() => setModal("karma")}>How trust and privacy work →</button>
       </section>
 
-      <footer><div className="footer-brand"><span className="brand-mark small">H</span><strong>hoagie<span>spaces</span></strong></div><p>Built for Princeton first-years · Not an official University service</p><div className="source-links"><a href="https://library.princeton.edu/visit-and-spaces/locations" target="_blank" rel="noreferrer">Live library directory ↗</a><a href="https://princetonlibrary.org/hours/" target="_blank" rel="noreferrer">Public Library hours ↗</a></div></footer>
+      <footer><div className="footer-brand"><span className="brand-mark small">H</span><strong>hoagie<span>spaces</span></strong></div><p>Built by Andrew Lobo, Arham Piracha, Saahir Vazirani & Abraham Piedra Gonzalez · Mentor: Mina Atak</p><div className="source-links"><a href="https://library.princeton.edu/visit-and-spaces/locations" target="_blank" rel="noreferrer">Live library directory ↗</a><a href="https://princetonlibrary.org/hours/" target="_blank" rel="noreferrer">Public Library hours ↗</a></div></footer>
 
       {modal && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && closeModal()}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={closeModal}>×</button>
         {modal === "login" ? <form onSubmit={signInDemo}><span className="section-kicker">PRINCETON COMMUNITY</span><h2 id="modal-title">Continue with your NetID</h2><p className="modal-intro">This public MVP never asks for your Princeton password. Entering a NetID creates a device-local prototype profile; it is <strong>not University-verified yet</strong>.</p><label>Princeton NetID<div className="netid-input"><input name="netid" autoCapitalize="none" autoComplete="username" placeholder="abc123" autoFocus /><span>@princeton.edu</span></div></label>{loginError && <p className="form-error">{loginError}</p>}<button className="primary wide" type="submit">Continue to prototype →</button><div className="cas-note"><b>Production authentication</b><span>HoagieSpaces is ready to connect to Princeton CAS. CAS sends students through Princeton’s sign-in and Duo flow, then the server validates a one-time ticket. OIT or TigerApps must approve and configure the production service URL.</span><a href="https://www.cs.princeton.edu/~cmoretti/cos333/CAS/" target="_blank" rel="noreferrer">Read Princeton’s CAS guidance ↗</a></div></form>
